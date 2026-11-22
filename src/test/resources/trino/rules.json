@@ -1,0 +1,19 @@
+{
+  "catalogs": [
+    {"group": "engineering", "allow": "all"},
+    {"group": "analysts", "catalog": "(tpch|memory)", "allow": "read-only"},
+    {"catalog": "system", "allow": "read-only"}
+  ],
+  "schemas": [
+    {"group": "engineering", "owner": true}
+  ],
+  "tables": [
+    {"group": "engineering", "privileges": ["SELECT", "INSERT", "DELETE", "UPDATE", "OWNERSHIP", "GRANT_SELECT"]},
+    {"group": "analysts", "catalog": "tpch", "privileges": ["SELECT"]},
+    {"group": "analysts", "catalog": "memory", "schema": "shared", "privileges": ["SELECT"]}
+  ],
+  "impersonation": [
+    {"original_user": "alice", "new_user": "bob", "allow": true},
+    {"original_user": ".*", "new_user": ".*", "allow": false}
+  ]
+}

@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Weekly run, so a new Trino release is tested through the "latest" entries without a code change
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  MAVEN_ARGS: --batch-mode --no-transfer-progress
+
+jobs:
+  # Static checks, all bound to the Maven build so "mvn verify" runs the same checks locally:
+  # formatting (Airstyle), Checkstyle, license headers, compiler warnings as errors, Error Prone,
+  # Modernizer, dependency analysis, and Maven/Java version requirements.
+  checks:
+    name: Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      - name: Maven checks
+        run: mvn verify -DskipTests
+
+      - name: Lint GitHub Actions workflows
+        run: docker run --rm --volume "${GITHUB_WORKSPACE}:/repo" --workdir /repo rhysd/actionlint:1.7.12 -color
+
+      - name: Validate the local environment
+        run: docker compose --file dev/docker-compose.yml config --quiet
+
+  build:
+    name: Build and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      # Compiler warnings and Error Prone still apply; the other checks run in the Checks job
+      - name: Build and run unit tests
+        run: mvn package -Dchecks.skip
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: plugin
+          path: target/*.zip
+          if-no-files-found: error
+
+  # The released plugin is built once, against the oldest supported Trino version (dep.trino.version in pom.xml).
+  # Each job loads that same artifact into a different trinodb/trino image and runs queries against Keycloak.
+  compatibility:
+    name: Trino ${{ matrix.trino }}
+    needs: [checks, build]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        trino: ["476", "478", "480", "482", "484", "latest"]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      - name: Run integration tests
+        run: mvn verify -Dchecks.skip -Dtrino.test.version=${{ matrix.trino }}
+
+      - uses: actions/upload-artifact@v5
+        if: failure()
+        with:
+          name: failsafe-reports-trino-${{ matrix.trino }}
+          path: target/failsafe-reports/
+
+  # Compiles against the newest Trino release, to find source incompatibilities before
+  # the minimum supported version has to be raised.
+  latest-trino-sources:
+    name: Build against latest Trino
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      - name: Find latest Trino release
+        id: trino
+        run: |
+          version=$(curl -fsS https://repo1.maven.org/maven2/io/trino/trino-spi/maven-metadata.xml | sed -n 's:.*<release>\(.*\)</release>.*:\1:p')
+          jdk=$(curl -fsS "https://repo1.maven.org/maven2/io/trino/trino-root/${version}/trino-root-${version}.pom" | sed -n 's:.*<project.build.targetJdk>\(.*\)</project.build.targetJdk>.*:\1:p' | head -n 1)
+          echo "Latest Trino release: ${version} (Java ${jdk})"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "jdk=${jdk}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and test
+        run: >-
+          mvn verify
+          -Ddep.trino.version=${{ steps.trino.outputs.version }}
+          -Dproject.build.targetJdk=${{ steps.trino.outputs.jdk }}
+          -Dtrino.test.version=${{ steps.trino.outputs.version }}

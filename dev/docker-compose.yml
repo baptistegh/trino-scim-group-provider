@@ -1,0 +1,67 @@
+# Local Trino + Keycloak environment for the SCIM group provider.
+# Usage (from the repository root):
+#   mvn package
+#   docker compose -f dev/docker-compose.yml up --build
+# TRINO_VERSION selects the Trino image, for example: TRINO_VERSION=484 docker compose ...
+
+name: trino-scim
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.2
+    command: ["start-dev", "--import-realm", "--features=scim-api"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+      # Tokens always carry the browser-facing issuer, while Trino calls Keycloak on keycloak:8080
+      KC_HOSTNAME: http://localhost:8180
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+    ports:
+      - "8180:8080"
+    volumes:
+      - ../src/test/resources/keycloak/trino-realm.json:/opt/keycloak/data/import/trino-realm.json:ro
+    healthcheck:
+      # The image has no curl; use bash's /dev/tcp against the management port
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # Self-signed certificate for Trino's HTTPS port
+  certs:
+    image: trinodb/trino:${TRINO_VERSION:-476}
+    user: root
+    entrypoint: ["sh", "-c"]
+    command:
+      - >-
+        test -f /certs/keystore.p12 ||
+        keytool -genkeypair -alias trino -keyalg RSA -keysize 2048 -validity 365
+        -dname CN=localhost -ext SAN=dns:localhost,dns:trino
+        -keystore /certs/keystore.p12 -storetype PKCS12 -storepass changeit -keypass changeit
+        && chmod 644 /certs/keystore.p12
+    volumes:
+      - certs:/certs
+
+  trino:
+    build:
+      context: ..
+      dockerfile: dev/Dockerfile
+      args:
+        TRINO_VERSION: ${TRINO_VERSION:-476}
+    ports:
+      - "8443:8443"
+    volumes:
+      - ./trino/config.properties:/etc/trino/config.properties:ro
+      - ../src/test/resources/trino/group-provider.properties:/etc/trino/group-provider.properties:ro
+      - ../src/test/resources/trino/access-control.properties:/etc/trino/access-control.properties:ro
+      - ../src/test/resources/trino/rules.json:/etc/trino/rules.json:ro
+      - certs:/etc/trino/certs:ro
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      certs:
+        condition: service_completed_successfully
+
+volumes:
+  certs:

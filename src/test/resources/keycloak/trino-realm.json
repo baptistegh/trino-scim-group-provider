@@ -1,0 +1,137 @@
+{
+  "realm": "trino",
+  "enabled": true,
+  "scimApiEnabled": true,
+  "accessTokenLifespan": 300,
+  "groups": [
+    {
+      "name": "engineering",
+      "subGroups": [
+        {
+          "name": "data-engineers"
+        }
+      ]
+    },
+    {
+      "name": "analysts"
+    }
+  ],
+  "users": [
+    {
+      "username": "alice",
+      "enabled": true,
+      "email": "alice@example.com",
+      "emailVerified": true,
+      "firstName": "Alice",
+      "lastName": "Example",
+      "credentials": [{"type": "password", "value": "alice", "temporary": false}],
+      "groups": ["/engineering/data-engineers"]
+    },
+    {
+      "username": "bob",
+      "enabled": true,
+      "email": "bob@example.com",
+      "emailVerified": true,
+      "firstName": "Bob",
+      "lastName": "Example",
+      "credentials": [{"type": "password", "value": "bob", "temporary": false}],
+      "groups": ["/analysts"]
+    },
+    {
+      "username": "carol",
+      "enabled": true,
+      "email": "carol@example.com",
+      "emailVerified": true,
+      "firstName": "Carol",
+      "lastName": "Example",
+      "credentials": [{"type": "password", "value": "carol", "temporary": false}],
+      "groups": []
+    },
+    {
+      "username": "service-account-trino-scim",
+      "enabled": true,
+      "serviceAccountClientId": "trino-scim",
+      "clientRoles": {
+        "realm-management": ["view-users", "query-users", "query-groups", "view-realm"]
+      }
+    },
+    {
+      "username": "service-account-trino-scim-no-audience",
+      "enabled": true,
+      "serviceAccountClientId": "trino-scim-no-audience",
+      "clientRoles": {
+        "realm-management": ["view-users", "query-users", "query-groups", "view-realm"]
+      }
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "trino-scim",
+      "name": "Trino SCIM group provider",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "trino-scim-secret",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "protocolMappers": [
+        {
+          "name": "scim-audience-tests",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "http://keycloak:8080/realms/trino/scim/v2",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "scim-audience-dev",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "http://localhost:8180/realms/trino/scim/v2",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "trino-scim-no-audience",
+      "name": "Misconfigured: tokens lack the SCIM audience",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "trino-scim-secret",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false
+    },
+    {
+      "clientId": "trino",
+      "name": "Trino",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "trino-secret",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": ["https://localhost:8443/*"],
+      "webOrigins": ["https://localhost:8443"],
+      "protocolMappers": [
+        {
+          "name": "trino-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "trino",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ]
+}
