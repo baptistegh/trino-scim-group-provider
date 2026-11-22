@@ -31,6 +31,16 @@ public final class HttpExchange
     public record Result(int statusCode, String body) {}
 
     /**
+     * Newer Airlift versions deprecate {@code setHeader(String, String)} in favor of an overload taking
+     * {@code HeaderName}, which does not exist in the oldest supported Trino version.
+     */
+    @SuppressWarnings("deprecation")
+    public static Request.Builder setHeader(Request.Builder builder, String name, String value)
+    {
+        return builder.setHeader(name, value);
+    }
+
+    /**
      * Sends the request and returns the status and body of any response, including error responses.
      *
      * @throws ScimException when no response was received

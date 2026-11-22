@@ -35,6 +35,7 @@ import static com.google.common.net.HttpHeaders.CONTENT_TYPE;
 import static io.airlift.http.client.Request.Builder.preparePost;
 import static io.airlift.http.client.StaticBodyGenerator.createStaticBodyGenerator;
 import static io.airlift.json.JsonCodec.jsonCodec;
+import static io.github.baptistegh.trino.scim.HttpExchange.setHeader;
 import static java.lang.Math.max;
 import static java.lang.Math.min;
 import static java.lang.String.format;
@@ -101,13 +102,13 @@ public class ClientCredentialsAuthenticator
         StringBuilder body = new StringBuilder("grant_type=client_credentials");
         scope.ifPresent(value -> body.append("&scope=").append(encode(value, UTF_8)));
 
-        Request request = preparePost()
+        Request.Builder builder = preparePost()
                 .setUri(tokenUrl)
-                .setHeader(AUTHORIZATION, clientAuthorizationHeader)
-                .setHeader(CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .setHeader(ACCEPT, "application/json")
-                .setBodyGenerator(createStaticBodyGenerator(body.toString(), UTF_8))
-                .build();
+                .setBodyGenerator(createStaticBodyGenerator(body.toString(), UTF_8));
+        setHeader(builder, AUTHORIZATION, clientAuthorizationHeader);
+        setHeader(builder, CONTENT_TYPE, "application/x-www-form-urlencoded");
+        setHeader(builder, ACCEPT, "application/json");
+        Request request = builder.build();
 
         long requestedAt = ticker.read();
         HttpExchange.Result response;

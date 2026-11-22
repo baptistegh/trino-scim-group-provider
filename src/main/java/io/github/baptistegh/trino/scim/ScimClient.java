@@ -30,6 +30,7 @@ import static com.google.common.net.HttpHeaders.AUTHORIZATION;
 import static io.airlift.http.client.HttpUriBuilder.uriBuilderFrom;
 import static io.airlift.http.client.Request.Builder.prepareGet;
 import static io.airlift.json.JsonCodec.jsonCodec;
+import static io.github.baptistegh.trino.scim.HttpExchange.setHeader;
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 
@@ -140,11 +141,10 @@ public class ScimClient
 
     private HttpExchange.Result execute(URI uri)
     {
-        Request request = prepareGet()
-                .setUri(uri)
-                .setHeader(AUTHORIZATION, authenticator.getAuthorizationHeader())
-                .setHeader(ACCEPT, SCIM_MEDIA_TYPE)
-                .build();
+        Request.Builder builder = prepareGet().setUri(uri);
+        setHeader(builder, AUTHORIZATION, authenticator.getAuthorizationHeader());
+        setHeader(builder, ACCEPT, SCIM_MEDIA_TYPE);
+        Request request = builder.build();
         return HttpExchange.execute(httpClient, request);
     }
 
