@@ -41,9 +41,64 @@ jobs:
     with:
       revision: ${{ needs.version.outputs.version }}
 
+  # Uploads to Maven Central and waits for Central to validate the deployment. Publishing it is manual:
+  # https://central.sonatype.com/publishing/deployments, since a version on Central can never be changed or removed.
+  maven-central:
+    name: Upload to Maven Central
+    needs: [version, ci]
+    runs-on: ubuntu-latest
+    env:
+      MAVEN_ARGS: --batch-mode --no-transfer-progress
+    steps:
+      - uses: actions/checkout@v7
+
+      # Writes the "central" server credentials to settings.xml and imports the signing key
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+          server-id: central
+          server-username: CENTRAL_USERNAME
+          server-password: CENTRAL_PASSWORD
+          gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: plugin
+          path: dist
+
+      # The build is reproducible: the rebuilt zip must be the exact zip that passed CI
+      - name: Check the rebuilt zip is the tested one
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          mvn package -Prelease -DskipTests -Dchecks.skip \
+            -Drevision="$VERSION" -Dproject.build.outputTimestamp="$(git log -1 --format=%ct)"
+          zip="trino-scim-group-provider-${VERSION}.zip"
+          tested=$(sha256sum "dist/$zip" | cut -d' ' -f1)
+          rebuilt=$(sha256sum "target/$zip" | cut -d' ' -f1)
+          echo "tested:  $tested"
+          echo "rebuilt: $rebuilt"
+          if [[ "$tested" != "$rebuilt" ]]; then
+            echo "::error::The rebuilt zip differs from the zip tested in CI"
+            exit 1
+          fi
+
+      - name: Sign and upload
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
+          CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: >-
+          mvn deploy -Prelease -DskipTests -Dchecks.skip
+          -Drevision="$VERSION" -Dproject.build.outputTimestamp="$(git log -1 --format=%ct)"
+
   publish:
     name: Publish GitHub release
-    needs: [version, ci]
+    needs: [version, ci, maven-central]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -91,6 +146,9 @@ jobs:
 
           Unzip \`${zip}\` into the plugin directory of every Trino node, for example \`/usr/lib/trino/plugin/scim-group-provider/\`,
           and configure \`etc/group-provider.properties\` as described in the [README](https://github.com/${REPOSITORY}/blob/v${VERSION}/README.md).
+
+          The same artifacts are on Maven Central as \`io.github.baptistegh:trino-scim-group-provider:${VERSION}\`
+          (the zip has type \`zip\`), once the deployment is published there.
 
           Verify the download:
 

@@ -185,9 +185,19 @@ git push origin v0.1.0
    needs no version commit.
 2. Runs the whole CI workflow on the tag: checks, unit tests, and the Trino matrix from
    `.github/compatibility.json`.
-3. Publishes a GitHub release with the zip that passed those tests, its SHA-256 checksum, a build provenance
+3. Rebuilds the artifacts with the `release` profile, checks that the zip is byte-identical to the one CI
+   tested, signs everything with GPG, and uploads it to Maven Central, where it waits for validation.
+4. Publishes a GitHub release with the zip that passed those tests, its SHA-256 checksum, a build provenance
    attestation, the tested Trino and Keycloak versions, and notes generated from the merged pull requests,
    grouped by label (`.github/release.yml`).
+5. **You publish the Maven Central deployment by hand**: check it on
+   <https://central.sonatype.com/publishing/deployments> and click *Publish*. A version published to Central can
+   never be changed or removed, so this is the one manual step. If something is wrong, *Drop* the deployment,
+   delete the tag and the GitHub release, and release again.
+
+The workflow needs these repository secrets: `CENTRAL_USERNAME` and `CENTRAL_PASSWORD` (a user token of the
+Central Portal, for the verified `io.github.baptistegh` namespace), `GPG_PRIVATE_KEY` (armored private key) and
+`GPG_PASSPHRASE`. The public key must be on a key server Central checks, such as `keyserver.ubuntu.com`.
 
 Builds are reproducible: CI uses the commit time as the timestamp of the jar and zip entries, so rebuilding a tag
 with `mvn package -Drevision=0.1.0 -Dproject.build.outputTimestamp=$(git log -1 --format=%ct)` produces the same

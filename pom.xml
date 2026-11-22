@@ -26,6 +26,14 @@
         <url>https://github.com/baptistegh/trino-scim-group-provider</url>
     </scm>
 
+    <developers>
+        <developer>
+            <id>baptistegh</id>
+            <name>Baptiste Gouhoury</name>
+            <url>https://github.com/baptistegh</url>
+        </developer>
+    </developers>
+
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
@@ -64,6 +72,12 @@
         <dep.plugin.compiler.version>3.14.1</dep.plugin.compiler.version>
         <dep.plugin.surefire.version>3.5.4</dep.plugin.surefire.version>
         <dep.plugin.flatten.version>1.9.0</dep.plugin.flatten.version>
+
+        <!-- Release to Maven Central (release profile) -->
+        <dep.plugin.source.version>3.4.0</dep.plugin.source.version>
+        <dep.plugin.javadoc.version>3.12.0</dep.plugin.javadoc.version>
+        <dep.plugin.gpg.version>3.2.8</dep.plugin.gpg.version>
+        <dep.plugin.central-publishing.version>0.12.0</dep.plugin.central-publishing.version>
 
         <!-- Static checks, configured like Airbase (the parent of Trino and Airlift) -->
         <dep.plugin.airstyle.version>10</dep.plugin.airstyle.version>
@@ -530,4 +544,88 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!--
+            Builds what Maven Central requires (sources and Javadoc jars, GPG signatures) and uploads it.
+            Used by .github/workflows/release.yml: mvn deploy -Prelease -Drevision=1.2.3
+            The deployment is only validated: publishing it is done by hand on https://central.sonatype.com,
+            because a version published to Central can never be changed or removed.
+        -->
+        <profile>
+            <id>release</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <version>${dep.plugin.source.version}</version>
+                        <executions>
+                            <execution>
+                                <id>attach-sources</id>
+                                <goals>
+                                    <goal>jar-no-fork</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <version>${dep.plugin.javadoc.version}</version>
+                        <configuration>
+                            <doclint>all,-missing</doclint>
+                            <failOnWarnings>true</failOnWarnings>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>attach-javadocs</id>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!-- The passphrase comes from the MAVEN_GPG_PASSPHRASE environment variable -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <version>${dep.plugin.gpg.version}</version>
+                        <configuration>
+                            <bestPractices>true</bestPractices>
+                            <gpgArguments>
+                                <arg>--pinentry-mode</arg>
+                                <arg>loopback</arg>
+                            </gpgArguments>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <goals>
+                                    <goal>sign</goal>
+                                </goals>
+                                <phase>verify</phase>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!-- Credentials: server "central" in settings.xml, written by actions/setup-java -->
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <version>${dep.plugin.central-publishing.version}</version>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <publishingServerId>central</publishingServerId>
+                            <deploymentName>${project.artifactId} ${project.version}</deploymentName>
+                            <autoPublish>false</autoPublish>
+                            <waitUntil>validated</waitUntil>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
