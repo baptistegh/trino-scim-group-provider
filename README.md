@@ -45,14 +45,19 @@ Keycloak realm roles are not exposed through SCIM.
 
 ## Installation
 
-Build the plugin, or download the zip from a CI run:
+Download `trino-scim-group-provider-<version>.zip` from the
+[releases](https://github.com/baptistegh/trino-scim-group-provider/releases). Each release lists the Trino versions
+that exact zip was tested with. To check that the zip is the one built by this repository's release workflow:
 
 ```shell
-mvn package
+sha256sum --check trino-scim-group-provider-<version>.zip.sha256
+gh attestation verify trino-scim-group-provider-<version>.zip --repo baptistegh/trino-scim-group-provider
 ```
 
-Unzip `target/trino-scim-group-provider-<version>.zip` into the plugin directory of every Trino node, for
-example `/usr/lib/trino/plugin/scim-group-provider/`, then create `etc/group-provider.properties`:
+You can also build it with `mvn package`, which writes it to `target/`.
+
+Unzip it into the plugin directory of every Trino node, for example `/usr/lib/trino/plugin/scim-group-provider/`,
+then create `etc/group-provider.properties`:
 
 ```properties
 group-provider.name=scim
@@ -160,3 +165,33 @@ group-based access rules, `SET SESSION AUTHORIZATION` and `SECURITY DEFINER` vie
 
 To support an older Trino version, lower `dep.trino.version` and `project.build.targetJdk` (the Java version
 that Trino version runs on) in `pom.xml`, and add the version to the matrix in `.github/workflows/ci.yml`.
+
+## Releasing
+
+Versions follow [semantic versioning](https://semver.org), independently of Trino versions. Raising the oldest
+supported Trino version (`dep.trino.version`) is a breaking change.
+
+To release, push a tag on a commit of `main` that passed CI:
+
+```shell
+git tag -s v0.1.0 -m v0.1.0
+git push origin v0.1.0
+```
+
+`.github/workflows/release.yml` then:
+
+1. Takes the version from the tag (`v0.1.0` → `0.1.0`); a suffix such as `v0.2.0-rc.1` makes a pre-release.
+   `pom.xml` keeps a `-SNAPSHOT` version: the release build sets the version with `-Drevision`, so releasing
+   needs no version commit.
+2. Runs the whole CI workflow on the tag: checks, unit tests, and the Trino matrix from
+   `.github/compatibility.json`.
+3. Publishes a GitHub release with the zip that passed those tests, its SHA-256 checksum, a build provenance
+   attestation, the tested Trino and Keycloak versions, and notes generated from the merged pull requests,
+   grouped by label (`.github/release.yml`).
+
+Builds are reproducible: CI uses the commit time as the timestamp of the jar and zip entries, so rebuilding a tag
+with `mvn package -Drevision=0.1.0 -Dproject.build.outputTimestamp=$(git log -1 --format=%ct)` produces the same
+zip.
+
+Dependency updates are proposed by [Renovate](https://docs.renovatebot.com) (`renovate.json`), except the oldest
+supported Trino version, which is only changed on purpose.

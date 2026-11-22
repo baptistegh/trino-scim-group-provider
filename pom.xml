@@ -4,7 +4,8 @@
 
     <groupId>io.github.baptistegh</groupId>
     <artifactId>trino-scim-group-provider</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <!-- Set by the release workflow from the Git tag: -Drevision=1.2.3 -->
+    <version>${revision}</version>
     <packaging>trino-plugin</packaging>
 
     <name>${project.artifactId}</name>
@@ -29,6 +30,16 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
+        <revision>0.1.0-SNAPSHOT</revision>
+        <!--
+            Timestamp written into the jar and zip entries, so a given commit always produces the same bytes.
+            CI passes the commit time; the value here only applies to local builds.
+        -->
+        <project.build.outputTimestamp>2026-11-22T00:00:00Z</project.build.outputTimestamp>
+
+        <!-- Plugin zip the integration tests install into Trino; CI points it at the artifact of the build job -->
+        <plugin.zip>${project.build.directory}/${project.artifactId}-${project.version}.zip</plugin.zip>
+
         <!--
             Oldest supported Trino version. The plugin is compiled against this version's SPI and
             dependency versions, and its Java release must match what that Trino version runs on.
@@ -52,6 +63,7 @@
         <dep.plugin.trino.version>26</dep.plugin.trino.version>
         <dep.plugin.compiler.version>3.14.1</dep.plugin.compiler.version>
         <dep.plugin.surefire.version>3.5.4</dep.plugin.surefire.version>
+        <dep.plugin.flatten.version>1.9.0</dep.plugin.flatten.version>
 
         <!-- Static checks, configured like Airbase (the parent of Trino and Airlift) -->
         <dep.plugin.airstyle.version>10</dep.plugin.airstyle.version>
@@ -257,6 +269,33 @@
                 <artifactId>trino-maven-plugin</artifactId>
                 <version>${dep.plugin.trino.version}</version>
                 <extensions>true</extensions>
+            </plugin>
+
+            <!-- Replaces ${revision} with its value in the installed pom -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>flatten-maven-plugin</artifactId>
+                <version>${dep.plugin.flatten.version}</version>
+                <configuration>
+                    <flattenMode>resolveCiFriendliesOnly</flattenMode>
+                    <updatePomFile>true</updatePomFile>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>flatten</id>
+                        <goals>
+                            <goal>flatten</goal>
+                        </goals>
+                        <phase>process-resources</phase>
+                    </execution>
+                    <execution>
+                        <id>flatten-clean</id>
+                        <goals>
+                            <goal>clean</goal>
+                        </goals>
+                        <phase>clean</phase>
+                    </execution>
+                </executions>
             </plugin>
 
             <plugin>
@@ -477,7 +516,7 @@
                     <systemPropertyVariables>
                         <trino.test.version>${trino.test.version}</trino.test.version>
                         <keycloak.test.image>${keycloak.test.image}</keycloak.test.image>
-                        <plugin.zip>${project.build.directory}/${project.artifactId}-${project.version}.zip</plugin.zip>
+                        <plugin.zip>${plugin.zip}</plugin.zip>
                     </systemPropertyVariables>
                 </configuration>
                 <executions>

@@ -1,0 +1,34 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":semanticCommitsDisabled"],
+  "labels": ["dependencies"],
+  "packageRules": [
+    {
+      "description": "dep.trino.version is the oldest supported Trino version: raising it drops support, so it changes on purpose. The 'latest' CI jobs cover new Trino releases.",
+      "matchPackageNames": ["io.trino:trino-root", "io.trino:trino-spi", "io.trino:trino-cache", "io.trino:trino-jdbc", "trinodb/trino"],
+      "enabled": false
+    },
+    {
+      "description": "docker-java must match the version Testcontainers is built with",
+      "matchPackageNames": ["org.testcontainers:**", "com.github.docker-java:**"],
+      "groupName": "Testcontainers"
+    },
+    {
+      "matchPackageNames": ["com.puppycrawl.tools:checkstyle", "com.google.errorprone:error_prone_core", "io.airlift:airbase-policy", "io.airlift:airstyle-maven-plugin", "rhysd/actionlint"],
+      "groupName": "static checks"
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "groupName": "GitHub Actions"
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Docker images referenced outside Dockerfiles and Compose files",
+      "managerFilePatterns": ["/^pom\\.xml$/", "/^src/test/java/.+\\.java$/", "/^\\.github/workflows/.+\\.ya?ml$/"],
+      "matchStrings": ["(?<depName>quay\\.io/keycloak/keycloak|rhysd/actionlint):(?<currentValue>[0-9][0-9A-Za-z.-]*)"],
+      "datasourceTemplate": "docker"
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+{
+  "$comment": "Trino versions the plugin artifact is tested with in CI and listed in release notes. 'latest' is the newest trinodb/trino image when the workflow runs.",
+  "trino": ["476", "478", "480", "482", "484", "latest"]
+}
