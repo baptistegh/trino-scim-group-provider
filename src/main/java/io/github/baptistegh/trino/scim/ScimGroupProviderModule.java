@@ -35,6 +35,8 @@ public class ScimGroupProviderModule
     protected void setup(Binder binder)
     {
         configBinder(binder).bindConfig(ScimGroupProviderConfig.class);
+        configBinder(binder).bindConfig(RetryConfig.class);
+        binder.bind(HttpRetrier.class).in(Scopes.SINGLETON);
         // Exposes scim.http-client.* properties (timeouts, TLS trust store, ...)
         httpClientBinder(binder).bindHttpClient("scim", ForScim.class);
 

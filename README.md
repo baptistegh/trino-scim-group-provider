@@ -21,9 +21,12 @@ Authorization: Bearer <token obtained with the OAuth 2.0 client credentials gran
 ```
 
 It returns the `display` name of each entry of the user's `groups` attribute. Results are cached
-(`scim.cache.ttl`). A user that does not exist has no groups. If the SCIM service cannot be reached or returns
-an error, the query fails rather than running with fewer groups, since fewer groups can mean more access when
-rules deny access based on group membership.
+(`scim.cache.ttl`). A user that does not exist has no groups.
+
+Requests that get no response, or HTTP 429, 502, 503 or 504, are retried with exponential backoff (`scim.retry.*`),
+and a `Retry-After` header is honored. If the SCIM service still cannot be reached or returns an error, the query
+fails rather than running with fewer groups, since fewer groups can mean more access when rules deny access based
+on group membership.
 
 ## Compatibility
 
@@ -82,6 +85,10 @@ scim.oauth2.client-secret=${ENV:SCIM_CLIENT_SECRET}
 | `scim.include-indirect-groups` | Include groups inherited through nested groups | `true` |
 | `scim.cache.ttl` | How long the groups of a user are cached; `0s` disables the cache | `5m` |
 | `scim.cache.maximum-size` | Maximum number of cached users | `10000` |
+| `scim.retry.max-attempts` | Maximum attempts of a request to the SCIM service or the token endpoint, including the first one; `1` disables retries | `3` |
+| `scim.retry.initial-delay` | Delay before the first retry. It doubles with each retry, and is randomized between half and all of that value | `200ms` |
+| `scim.retry.max-delay` | Maximum delay between two attempts, unless the service asks for a longer one with `Retry-After` | `2s` |
+| `scim.retry.max-duration` | No retry starts later than this after the first attempt, so a request takes at most this long plus one `scim.http-client.request-timeout` | `10s` |
 | `scim.http-client.*` | [Airlift HTTP client](https://github.com/airlift/airlift/blob/master/http-client/src/main/java/io/airlift/http/client/HttpClientConfig.java) settings, for example `scim.http-client.request-timeout` or `scim.http-client.trust-store-path` | |
 
 Group names can be converted to lower or upper case with Trino's `group-provider.group-case` property.
@@ -120,12 +127,14 @@ FROM jmx.current."io.github.baptistegh.trino.scim:name=scimclient";
 | `io.github.baptistegh.trino.scim:name=ScimClient` | `Requests.*` | HTTP requests sent to the SCIM service, including retries |
 | | `RequestTime.*` | Duration of those requests, in milliseconds |
 | | `ConnectionFailures.*` | Requests that received no response: connection refused, timeout, TLS error, ... |
-| | `ErrorResponses.*` | Responses with a status other than 200, after the retry on 401 |
+| | `ErrorResponses.*` | Responses with a status other than 200, once retries are exhausted |
 | | `InvalidResponses.*` | 200 responses whose body could not be parsed |
+| | `Retries.*` | Requests retried after no response, HTTP 429 or HTTP 502, 503 or 504 |
 | | `CredentialRetries.*` | 401 responses that made the plugin discard its token and retry |
-| `io.github.baptistegh.trino.scim.auth:name=ClientCredentialsAuthenticator` | `TokenRequests.*` | Requests sent to the token endpoint |
+| `io.github.baptistegh.trino.scim.auth:name=ClientCredentialsAuthenticator` | `TokenRequests.*` | Tokens requested from the token endpoint. Each can take several HTTP requests when retried |
 | | `TokenRequestTime.*` | Duration of those requests, in milliseconds |
 | | `TokenFailures.*` | Token requests that did not return a usable token |
+| | `TokenRetries.*` | Token requests retried after no response, HTTP 429 or HTTP 502, 503 or 504 |
 
 Counters (`*.TotalCount`, and rates over one, five and fifteen minutes) and timings (`*.AllTime.P99`, ...) follow
 Airlift's [`CounterStat`](https://github.com/airlift/airlift/blob/master/stats/src/main/java/io/airlift/stats/CounterStat.java)

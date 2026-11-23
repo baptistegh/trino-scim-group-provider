@@ -18,8 +18,11 @@ import io.airlift.http.client.Request;
 import io.airlift.http.client.StringResponseHandler.StringResponse;
 import org.eclipse.jetty.client.HttpResponseException;
 
+import java.util.Optional;
+
 import static io.airlift.http.client.StringResponseHandler.createStringResponseHandler;
 import static java.lang.String.format;
+import static java.util.Objects.requireNonNull;
 
 public final class HttpExchange
 {
@@ -27,8 +30,16 @@ public final class HttpExchange
 
     /**
      * @param body empty when the HTTP client rejected the response before reading it
+     * @param retryAfter value of the {@code Retry-After} header
      */
-    public record Result(int statusCode, String body) {}
+    public record Result(int statusCode, String body, Optional<String> retryAfter)
+    {
+        public Result
+        {
+            requireNonNull(body, "body is null");
+            requireNonNull(retryAfter, "retryAfter is null");
+        }
+    }
 
     /**
      * Newer Airlift versions deprecate {@code setHeader(String, String)} in favor of an overload taking
@@ -49,7 +60,7 @@ public final class HttpExchange
     {
         try {
             StringResponse response = httpClient.execute(request, createStringResponseHandler());
-            return new Result(response.getStatusCode(), response.getBody() == null ? "" : response.getBody());
+            return new Result(response.getStatusCode(), response.getBody() == null ? "" : response.getBody(), Optional.ofNullable(header(response, "Retry-After")));
         }
         catch (RuntimeException e) {
             // Jetty fails a 401 that has no WWW-Authenticate header ("Authentication challenge without
@@ -57,10 +68,20 @@ public final class HttpExchange
             // responds like that, so recover the status to report it like any other error response.
             for (Throwable cause = e; cause != null; cause = cause.getCause()) {
                 if (cause instanceof HttpResponseException responseException && responseException.getResponse() != null) {
-                    return new Result(responseException.getResponse().getStatus(), "");
+                    return new Result(responseException.getResponse().getStatus(), "", Optional.empty());
                 }
             }
             throw new ScimException(format("Request %s %s failed: %s", request.getMethod(), request.getUri(), e.getMessage()), e);
         }
+    }
+
+    /**
+     * Newer Airlift versions deprecate {@code getHeader(String)} in favor of an overload taking
+     * {@code HeaderName}, which does not exist in the oldest supported Trino version.
+     */
+    @SuppressWarnings("deprecation")
+    private static String header(StringResponse response, String name)
+    {
+        return response.getHeader(name);
     }
 }

@@ -35,9 +35,14 @@ import java.util.function.Function;
 import static io.airlift.http.client.testing.TestingResponse.mockResponse;
 import static io.github.baptistegh.trino.scim.ScimClient.equalityFilter;
 import static io.github.baptistegh.trino.scim.TestingRequests.header;
+import static io.github.baptistegh.trino.scim.TestingRequests.responseWithHeader;
+import static io.github.baptistegh.trino.scim.TestingRetriers.noRetries;
+import static io.github.baptistegh.trino.scim.TestingRetriers.retrier;
 import static io.github.baptistegh.trino.scim.TestingStats.recordedCount;
 import static java.net.URLDecoder.decode;
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
+import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -217,6 +222,43 @@ final class TestScimClient
     }
 
     @Test
+    void testRetriesTransientFailures()
+    {
+        List<Long> sleeps = new ArrayList<>();
+        AtomicInteger calls = new AtomicInteger();
+        ScimClient client = client(new CountingAuthenticator(), retrier(new RetryConfig(), sleeps), _ -> switch (calls.incrementAndGet()) {
+            case 1 -> throw new UncheckedIOException(new IOException("Connection reset"));
+            case 2 -> responseWithHeader(HttpStatus.TOO_MANY_REQUESTS, "Retry-After", "1");
+            default -> scimResponse("{\"totalResults\": 0}");
+        });
+
+        assertThat(client.findUser("alice")).isEmpty();
+        assertThat(calls).hasValue(3);
+        assertThat(sleeps).containsExactly(MILLISECONDS.toNanos(150), SECONDS.toNanos(1));
+        assertThat(client.getRequests().getTotalCount()).isEqualTo(3);
+        assertThat(client.getRetries().getTotalCount()).isEqualTo(2);
+        assertThat(client.getConnectionFailures().getTotalCount()).isEqualTo(1);
+        assertThat(client.getErrorResponses().getTotalCount()).isEqualTo(0);
+    }
+
+    @Test
+    void testReportsLastFailureWhenRetriesAreExhausted()
+    {
+        AtomicInteger calls = new AtomicInteger();
+        ScimClient client = client(new CountingAuthenticator(), retrier(new RetryConfig(), new ArrayList<>()), _ -> {
+            calls.incrementAndGet();
+            return mockResponse(HttpStatus.SERVICE_UNAVAILABLE, SCIM_JSON, "{\"detail\": \"down for maintenance\"}");
+        });
+
+        assertThatThrownBy(() -> client.findUser("alice"))
+                .isInstanceOf(ScimException.class)
+                .hasMessageContaining("HTTP 503")
+                .hasMessageContaining("down for maintenance");
+        assertThat(calls).hasValue(3);
+        assertThat(client.getErrorResponses().getTotalCount()).isEqualTo(1);
+    }
+
+    @Test
     void testCustomFilterAttribute()
     {
         List<Request> requests = new ArrayList<>();
@@ -224,7 +266,7 @@ final class TestScimClient
         ScimClient client = new ScimClient(new TestingHttpClient(request -> {
             requests.add(request);
             return scimResponse("{\"totalResults\": 0}");
-        }), new CountingAuthenticator(), config);
+        }), new CountingAuthenticator(), noRetries(), config);
 
         assertThat(client.findUser("alice@example.com")).isEqualTo(Optional.empty());
         assertThat(decode(requests.getFirst().getUri().getRawQuery(), UTF_8)).startsWith("filter=emails.value eq \"alice@example.com\"");
@@ -237,7 +279,12 @@ final class TestScimClient
 
     static ScimClient client(ScimAuthenticator authenticator, Function<Request, Response> handler)
     {
-        return new ScimClient(new TestingHttpClient(handler::apply), authenticator, new ScimGroupProviderConfig().setBaseUrl(BASE_URL));
+        return client(authenticator, noRetries(), handler);
+    }
+
+    static ScimClient client(ScimAuthenticator authenticator, HttpRetrier retrier, Function<Request, Response> handler)
+    {
+        return new ScimClient(new TestingHttpClient(handler::apply), authenticator, retrier, new ScimGroupProviderConfig().setBaseUrl(BASE_URL));
     }
 
     static Response scimResponse(String json)

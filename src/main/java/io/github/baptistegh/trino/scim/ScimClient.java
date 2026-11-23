@@ -53,6 +53,7 @@ public class ScimClient
     private final ScimAuthenticator authenticator;
     private final URI baseUrl;
     private final String userFilterAttribute;
+    private final HttpRetrier retrier;
 
     private final CounterStat requests = new CounterStat();
     private final TimeStat requestTime = new TimeStat(MILLISECONDS);
@@ -60,10 +61,12 @@ public class ScimClient
     private final CounterStat errorResponses = new CounterStat();
     private final CounterStat invalidResponses = new CounterStat();
     private final CounterStat credentialRetries = new CounterStat();
+    private final CounterStat retries = new CounterStat();
 
     @Inject
-    public ScimClient(@ForScim HttpClient httpClient, ScimAuthenticator authenticator, ScimGroupProviderConfig config)
+    public ScimClient(@ForScim HttpClient httpClient, ScimAuthenticator authenticator, HttpRetrier retrier, ScimGroupProviderConfig config)
     {
+        this.retrier = requireNonNull(retrier, "retrier is null");
         this.httpClient = requireNonNull(httpClient, "httpClient is null");
         this.authenticator = requireNonNull(authenticator, "authenticator is null");
         this.baseUrl = requireNonNull(config.getBaseUrl(), "baseUrl is null");
@@ -162,6 +165,11 @@ public class ScimClient
         setHeader(builder, AUTHORIZATION, authenticator.getAuthorizationHeader());
         setHeader(builder, ACCEPT, SCIM_MEDIA_TYPE);
         Request request = builder.build();
+        return retrier.execute("SCIM request " + uri, () -> send(request), () -> retries.update(1));
+    }
+
+    private HttpExchange.Result send(Request request)
+    {
         requests.update(1);
         try (TimeStat.BlockTimer _ = requestTime.time()) {
             return HttpExchange.execute(httpClient, request);
@@ -200,7 +208,7 @@ public class ScimClient
     }
 
     /**
-     * Responses with a status other than 200, after the retry on 401.
+     * Responses with a status other than 200, once retries are exhausted.
      */
     @Managed
     @Nested
@@ -217,6 +225,16 @@ public class ScimClient
     public CounterStat getInvalidResponses()
     {
         return invalidResponses;
+    }
+
+    /**
+     * Requests retried after no response, HTTP 429 or HTTP 502, 503 or 504.
+     */
+    @Managed
+    @Nested
+    public CounterStat getRetries()
+    {
+        return retries;
     }
 
     /**

@@ -19,6 +19,7 @@ import io.airlift.http.client.Request;
 import io.airlift.http.client.Response;
 import io.airlift.http.client.StaticBodyGenerator;
 import io.airlift.http.client.testing.TestingHttpClient;
+import io.github.baptistegh.trino.scim.RetryConfig;
 import io.github.baptistegh.trino.scim.ScimException;
 import org.junit.jupiter.api.Test;
 
@@ -31,6 +32,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static com.google.common.net.MediaType.JSON_UTF_8;
 import static io.airlift.http.client.testing.TestingResponse.mockResponse;
 import static io.github.baptistegh.trino.scim.TestingRequests.header;
+import static io.github.baptistegh.trino.scim.TestingRetriers.noRetries;
+import static io.github.baptistegh.trino.scim.TestingRetriers.retrier;
 import static io.github.baptistegh.trino.scim.TestingStats.recordedCount;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.concurrent.TimeUnit.SECONDS;
@@ -52,6 +55,7 @@ final class TestClientCredentialsAuthenticator
 
         ClientCredentialsAuthenticator authenticator = new ClientCredentialsAuthenticator(
                 httpClient,
+                noRetries(),
                 config().setClientId("trino:groups").setScope("scim:read users"),
                 new FakeTicker());
 
@@ -75,7 +79,7 @@ final class TestClientCredentialsAuthenticator
         AtomicInteger issued = new AtomicInteger();
         TestingHttpClient httpClient = new TestingHttpClient(_ -> tokenResponse("token-" + issued.incrementAndGet(), 300));
         FakeTicker ticker = new FakeTicker();
-        ClientCredentialsAuthenticator authenticator = new ClientCredentialsAuthenticator(httpClient, config(), ticker);
+        ClientCredentialsAuthenticator authenticator = new ClientCredentialsAuthenticator(httpClient, noRetries(), config(), ticker);
 
         assertThat(authenticator.getAuthorizationHeader()).isEqualTo("Bearer token-1");
         ticker.advance(269);
@@ -91,7 +95,7 @@ final class TestClientCredentialsAuthenticator
     {
         AtomicInteger issued = new AtomicInteger();
         TestingHttpClient httpClient = new TestingHttpClient(_ -> tokenResponse("token-" + issued.incrementAndGet(), 300));
-        ClientCredentialsAuthenticator authenticator = new ClientCredentialsAuthenticator(httpClient, config(), new FakeTicker());
+        ClientCredentialsAuthenticator authenticator = new ClientCredentialsAuthenticator(httpClient, noRetries(), config(), new FakeTicker());
 
         assertThat(authenticator.getAuthorizationHeader()).isEqualTo("Bearer token-1");
         authenticator.invalidate();
@@ -102,7 +106,7 @@ final class TestClientCredentialsAuthenticator
     void testTokenEndpointError()
     {
         TestingHttpClient httpClient = new TestingHttpClient(_ -> mockResponse(HttpStatus.UNAUTHORIZED, JSON_UTF_8, "{\"error\":\"invalid_client\"}"));
-        ClientCredentialsAuthenticator authenticator = new ClientCredentialsAuthenticator(httpClient, config(), new FakeTicker());
+        ClientCredentialsAuthenticator authenticator = new ClientCredentialsAuthenticator(httpClient, noRetries(), config(), new FakeTicker());
 
         assertThatThrownBy(authenticator::getAuthorizationHeader)
                 .isInstanceOf(ScimException.class)
@@ -117,7 +121,7 @@ final class TestClientCredentialsAuthenticator
         TestingHttpClient httpClient = new TestingHttpClient(_ -> calls.incrementAndGet() == 1
                 ? mockResponse(HttpStatus.SERVICE_UNAVAILABLE, JSON_UTF_8, "{}")
                 : tokenResponse("token", 300));
-        ClientCredentialsAuthenticator authenticator = new ClientCredentialsAuthenticator(httpClient, config(), new FakeTicker());
+        ClientCredentialsAuthenticator authenticator = new ClientCredentialsAuthenticator(httpClient, noRetries(), config(), new FakeTicker());
 
         assertThatThrownBy(authenticator::getAuthorizationHeader).isInstanceOf(ScimException.class);
         assertThat(authenticator.getAuthorizationHeader()).isEqualTo("Bearer token");
@@ -130,10 +134,26 @@ final class TestClientCredentialsAuthenticator
     }
 
     @Test
+    void testRetriesTokenEndpoint()
+    {
+        AtomicInteger calls = new AtomicInteger();
+        TestingHttpClient httpClient = new TestingHttpClient(_ -> calls.incrementAndGet() == 1
+                ? mockResponse(HttpStatus.SERVICE_UNAVAILABLE, JSON_UTF_8, "{}")
+                : tokenResponse("token", 300));
+        ClientCredentialsAuthenticator authenticator = new ClientCredentialsAuthenticator(httpClient, retrier(new RetryConfig(), new ArrayList<>()), config(), new FakeTicker());
+
+        assertThat(authenticator.getAuthorizationHeader()).isEqualTo("Bearer token");
+        assertThat(calls).hasValue(2);
+        assertThat(authenticator.getTokenRequests().getTotalCount()).isEqualTo(1);
+        assertThat(authenticator.getTokenRetries().getTotalCount()).isEqualTo(1);
+        assertThat(authenticator.getTokenFailures().getTotalCount()).isEqualTo(0);
+    }
+
+    @Test
     void testRejectsNonBearerToken()
     {
         TestingHttpClient httpClient = new TestingHttpClient(_ -> mockResponse(HttpStatus.OK, JSON_UTF_8, "{\"access_token\":\"x\",\"token_type\":\"mac\"}"));
-        ClientCredentialsAuthenticator authenticator = new ClientCredentialsAuthenticator(httpClient, config(), new FakeTicker());
+        ClientCredentialsAuthenticator authenticator = new ClientCredentialsAuthenticator(httpClient, noRetries(), config(), new FakeTicker());
 
         assertThatThrownBy(authenticator::getAuthorizationHeader)
                 .isInstanceOf(ScimException.class)
