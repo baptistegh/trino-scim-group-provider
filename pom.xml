@@ -71,7 +71,7 @@
         <dep.plugin.trino.version>26</dep.plugin.trino.version>
         <dep.plugin.compiler.version>3.16.0</dep.plugin.compiler.version>
         <dep.plugin.surefire.version>3.5.4</dep.plugin.surefire.version>
-        <dep.plugin.flatten.version>1.9.0</dep.plugin.flatten.version>
+        <dep.plugin.flatten.version>1.10.0</dep.plugin.flatten.version>
 
         <!-- Release to Maven Central (release profile) -->
         <dep.plugin.source.version>3.4.0</dep.plugin.source.version>
