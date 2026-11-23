@@ -35,6 +35,7 @@ import java.util.function.Function;
 import static io.airlift.http.client.testing.TestingResponse.mockResponse;
 import static io.github.baptistegh.trino.scim.ScimClient.equalityFilter;
 import static io.github.baptistegh.trino.scim.TestingRequests.header;
+import static io.github.baptistegh.trino.scim.TestingStats.recordedCount;
 import static java.net.URLDecoder.decode;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -208,7 +209,7 @@ final class TestScimClient
         assertThatThrownBy(() -> client.findUser("alice")).hasMessageContaining("Connection refused");
 
         assertThat(client.getRequests().getTotalCount()).isEqualTo(6);
-        assertThat(client.getRequestTime().getAllTime().getCount()).isEqualTo(6);
+        assertThat(recordedCount(client.getRequestTime())).isEqualTo(6);
         assertThat(client.getCredentialRetries().getTotalCount()).isEqualTo(1);
         assertThat(client.getErrorResponses().getTotalCount()).isEqualTo(1);
         assertThat(client.getInvalidResponses().getTotalCount()).isEqualTo(1);

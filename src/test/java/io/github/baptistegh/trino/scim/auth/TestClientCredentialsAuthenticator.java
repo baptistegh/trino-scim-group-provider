@@ -31,6 +31,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static com.google.common.net.MediaType.JSON_UTF_8;
 import static io.airlift.http.client.testing.TestingResponse.mockResponse;
 import static io.github.baptistegh.trino.scim.TestingRequests.header;
+import static io.github.baptistegh.trino.scim.TestingStats.recordedCount;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -125,7 +126,7 @@ final class TestClientCredentialsAuthenticator
 
         assertThat(authenticator.getTokenRequests().getTotalCount()).isEqualTo(2);
         assertThat(authenticator.getTokenFailures().getTotalCount()).isEqualTo(1);
-        assertThat(authenticator.getTokenRequestTime().getAllTime().getCount()).isEqualTo(2);
+        assertThat(recordedCount(authenticator.getTokenRequestTime())).isEqualTo(2);
     }
 
     @Test
