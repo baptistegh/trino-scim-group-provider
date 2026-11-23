@@ -1,7 +1,7 @@
 # Trino image with the locally built plugin. Build the plugin first with: mvn package
 ARG TRINO_VERSION=476
 
-FROM alpine:3.22 AS plugin
+FROM alpine:3.24 AS plugin
 COPY target/trino-scim-group-provider-*.zip /tmp/
 RUN mkdir /plugin && unzip -q -j /tmp/trino-scim-group-provider-*.zip -d /plugin
 
