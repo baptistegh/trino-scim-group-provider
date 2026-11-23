@@ -54,7 +54,7 @@ sha256sum --check trino-scim-group-provider-<version>.zip.sha256
 gh attestation verify trino-scim-group-provider-<version>.zip --repo baptistegh/trino-scim-group-provider
 ```
 
-You can also build it with `mvn package`, which writes it to `target/`.
+You can also build it with `./mvnw package`, which writes it to `target/`.
 
 Unzip it into the plugin directory of every Trino node, for example `/usr/lib/trino/plugin/scim-group-provider/`,
 then create `etc/group-provider.properties`:
@@ -107,7 +107,7 @@ Group names can be converted to lower or upper case with Trino's `group-provider
 through SCIM. The access rules (`src/test/resources/trino/rules.json`) grant access based on those groups.
 
 ```shell
-mvn clean package
+./mvnw clean package
 docker compose -f dev/docker-compose.yml up --build
 ```
 
@@ -137,18 +137,20 @@ SELECT current_user, current_groups();
 
 ## Development
 
+The Maven Wrapper (`./mvnw`) downloads the Maven version the project is built with; only JDK 25 is needed.
+
 ```shell
-mvn verify                              # checks, unit tests, then integration tests in Docker
-mvn verify -DskipTests                  # checks only
-mvn verify -Dtrino.test.version=484     # integration tests against another Trino image
-mvn airstyle:format                     # format the code like Trino and Airlift
+./mvnw verify                           # checks, unit tests, then integration tests in Docker
+./mvnw verify -DskipTests               # checks only
+./mvnw verify -Dtrino.test.version=484  # integration tests against another Trino image
+./mvnw airstyle:format                  # format the code like Trino and Airlift
 ```
 
-`mvn verify` runs the same checks as CI, configured like Trino and Airlift:
+`./mvnw verify` runs the same checks as CI, configured like Trino and Airlift:
 
 | Check | Tool |
 |---|---|
-| Formatting | [Airstyle](https://github.com/airlift/airstyle), fixed with `mvn airstyle:format` |
+| Formatting | [Airstyle](https://github.com/airlift/airstyle), fixed with `./mvnw airstyle:format` |
 | Code style | Checkstyle with the Airbase rules |
 | License header on every Java file | license-maven-plugin with the Airbase Apache header |
 | Compiler warnings | `-Xlint:all`, warnings fail the build |
@@ -200,7 +202,7 @@ Central Portal, for the verified `io.github.baptistegh` namespace), `GPG_PRIVATE
 `GPG_PASSPHRASE`. The public key must be on a key server Central checks, such as `keyserver.ubuntu.com`.
 
 Builds are reproducible: CI uses the commit time as the timestamp of the jar and zip entries, so rebuilding a tag
-with `mvn package -Drevision=0.1.0 -Dproject.build.outputTimestamp=$(git log -1 --format=%ct)` produces the same
+with `./mvnw package -Drevision=0.1.0 -Dproject.build.outputTimestamp=$(git log -1 --format=%ct)` produces the same
 zip.
 
 Dependency updates are proposed by [Renovate](https://docs.renovatebot.com) (`renovate.json`), except the oldest

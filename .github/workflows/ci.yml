@@ -28,7 +28,7 @@ env:
   MAVEN_ARGS: --batch-mode --no-transfer-progress
 
 jobs:
-  # Static checks, all bound to the Maven build so "mvn verify" runs the same checks locally:
+  # Static checks, all bound to the Maven build so "./mvnw verify" runs the same checks locally:
   # formatting (Airstyle), Checkstyle, license headers, compiler warnings as errors, Error Prone,
   # Modernizer, dependency analysis, and Maven/Java version requirements.
   checks:
@@ -44,7 +44,7 @@ jobs:
           cache: maven
 
       - name: Maven checks
-        run: mvn verify -DskipTests
+        run: ./mvnw verify -DskipTests
 
       - name: Lint GitHub Actions workflows
         run: docker run --rm --volume "${GITHUB_WORKSPACE}:/repo" --workdir /repo rhysd/actionlint:1.7.12 -color
@@ -74,7 +74,7 @@ jobs:
         env:
           REVISION: ${{ inputs.revision }}
         run: >-
-          mvn verify -Dchecks.skip -Dit.test=KeycloakScimGroupProviderIT
+          ./mvnw verify -Dchecks.skip -Dit.test=KeycloakScimGroupProviderIT
           -Dproject.build.outputTimestamp="$(git log -1 --format=%ct)"
           ${REVISION:+-Drevision="$REVISION"}
 
@@ -132,7 +132,7 @@ jobs:
           TRINO_VERSION: ${{ matrix.trino }}
           PLUGIN_ZIP: ${{ github.workspace }}/dist/${{ needs.build.outputs.zip }}
         run: >-
-          mvn verify -Dchecks.skip
+          ./mvnw verify -Dchecks.skip
           -Dtest=none -Dsurefire.failIfNoSpecifiedTests=false -Dit.test=TrinoCompatibilityIT
           -Dtrino.test.version="$TRINO_VERSION" -Dplugin.zip="$PLUGIN_ZIP"
 
@@ -191,7 +191,7 @@ jobs:
           TRINO_VERSION: ${{ steps.trino.outputs.version }}
           TRINO_JDK: ${{ steps.trino.outputs.jdk }}
         run: >-
-          mvn verify
+          ./mvnw verify
           -Ddep.trino.version="$TRINO_VERSION"
           -Dproject.build.targetJdk="$TRINO_JDK"
           -Dtrino.test.version="$TRINO_VERSION"

@@ -1,4 +1,4 @@
-# Trino image with the locally built plugin. Build the plugin first with: mvn package
+# Trino image with the locally built plugin. Build the plugin first with: ./mvnw package
 ARG TRINO_VERSION=476
 
 FROM alpine:3.24 AS plugin

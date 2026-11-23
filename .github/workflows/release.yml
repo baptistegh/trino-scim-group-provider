@@ -74,7 +74,7 @@ jobs:
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          mvn package -Prelease -DskipTests -Dchecks.skip \
+          ./mvnw package -Prelease -DskipTests -Dchecks.skip \
             -Drevision="$VERSION" -Dproject.build.outputTimestamp="$(git log -1 --format=%ct)"
           zip="trino-scim-group-provider-${VERSION}.zip"
           tested=$(sha256sum "dist/$zip" | cut -d' ' -f1)
@@ -93,7 +93,7 @@ jobs:
           CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: >-
-          mvn deploy -Prelease -DskipTests -Dchecks.skip
+          ./mvnw deploy -Prelease -DskipTests -Dchecks.skip
           -Drevision="$VERSION" -Dproject.build.outputTimestamp="$(git log -1 --format=%ct)"
 
   publish:

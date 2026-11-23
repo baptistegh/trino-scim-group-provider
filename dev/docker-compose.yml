@@ -1,6 +1,6 @@
 # Local Trino + Keycloak environment for the SCIM group provider.
 # Usage (from the repository root):
-#   mvn package
+#   ./mvnw package
 #   docker compose -f dev/docker-compose.yml up --build
 # TRINO_VERSION selects the Trino image, for example: TRINO_VERSION=484 docker compose ...
 
