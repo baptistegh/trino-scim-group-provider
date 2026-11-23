@@ -88,7 +88,7 @@
         <dep.plugin.dependency.version>3.11.0</dep.plugin.dependency.version>
         <dep.plugin.enforcer.version>3.7.0</dep.plugin.enforcer.version>
         <!-- Checkstyle rules and license header shared by Airlift projects -->
-        <dep.airbase-policy.version>418</dep.airbase-policy.version>
+        <dep.airbase-policy.version>426</dep.airbase-policy.version>
         <dep.errorprone.version>2.53.0</dep.errorprone.version>
 
         <!-- -Dchecks.skip skips the static checks except the compiler ones, for jobs that only run tests -->
