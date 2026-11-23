@@ -31,6 +31,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static com.google.common.net.MediaType.JSON_UTF_8;
 import static io.airlift.http.client.testing.TestingResponse.mockResponse;
 import static io.github.baptistegh.trino.scim.TestingRequests.header;
+import static io.github.baptistegh.trino.scim.TestingStats.recordedCount;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -107,6 +108,25 @@ final class TestClientCredentialsAuthenticator
                 .isInstanceOf(ScimException.class)
                 .hasMessageContaining("HTTP 401")
                 .hasMessageContaining("invalid_client");
+    }
+
+    @Test
+    void testMetrics()
+    {
+        AtomicInteger calls = new AtomicInteger();
+        TestingHttpClient httpClient = new TestingHttpClient(_ -> calls.incrementAndGet() == 1
+                ? mockResponse(HttpStatus.SERVICE_UNAVAILABLE, JSON_UTF_8, "{}")
+                : tokenResponse("token", 300));
+        ClientCredentialsAuthenticator authenticator = new ClientCredentialsAuthenticator(httpClient, config(), new FakeTicker());
+
+        assertThatThrownBy(authenticator::getAuthorizationHeader).isInstanceOf(ScimException.class);
+        assertThat(authenticator.getAuthorizationHeader()).isEqualTo("Bearer token");
+        // Served from the cached token
+        assertThat(authenticator.getAuthorizationHeader()).isEqualTo("Bearer token");
+
+        assertThat(authenticator.getTokenRequests().getTotalCount()).isEqualTo(2);
+        assertThat(authenticator.getTokenFailures().getTotalCount()).isEqualTo(1);
+        assertThat(recordedCount(authenticator.getTokenRequestTime())).isEqualTo(2);
     }
 
     @Test

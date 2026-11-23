@@ -20,10 +20,14 @@ import com.google.inject.Inject;
 import io.airlift.http.client.HttpClient;
 import io.airlift.http.client.Request;
 import io.airlift.json.JsonCodec;
+import io.airlift.stats.CounterStat;
+import io.airlift.stats.TimeStat;
 import io.github.baptistegh.trino.scim.ForScim;
 import io.github.baptistegh.trino.scim.HttpExchange;
 import io.github.baptistegh.trino.scim.ScimException;
 import io.github.baptistegh.trino.scim.model.TokenResponse;
+import org.weakref.jmx.Managed;
+import org.weakref.jmx.Nested;
 
 import java.net.URI;
 import java.util.Base64;
@@ -42,6 +46,7 @@ import static java.lang.String.format;
 import static java.net.URLEncoder.encode;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
 /**
@@ -60,6 +65,10 @@ public class ClientCredentialsAuthenticator
     private final String clientAuthorizationHeader;
     private final Optional<String> scope;
     private final Ticker ticker;
+
+    private final CounterStat tokenRequests = new CounterStat();
+    private final TimeStat tokenRequestTime = new TimeStat(MILLISECONDS);
+    private final CounterStat tokenFailures = new CounterStat();
 
     @GuardedBy("this")
     private AccessToken token;
@@ -97,7 +106,46 @@ public class ClientCredentialsAuthenticator
         token = null;
     }
 
+    /**
+     * Token requests sent to the token endpoint.
+     */
+    @Managed
+    @Nested
+    public CounterStat getTokenRequests()
+    {
+        return tokenRequests;
+    }
+
+    @Managed
+    @Nested
+    public TimeStat getTokenRequestTime()
+    {
+        return tokenRequestTime;
+    }
+
+    /**
+     * Token requests that did not return a usable token.
+     */
+    @Managed
+    @Nested
+    public CounterStat getTokenFailures()
+    {
+        return tokenFailures;
+    }
+
     private AccessToken fetchToken()
+    {
+        tokenRequests.update(1);
+        try (TimeStat.BlockTimer _ = tokenRequestTime.time()) {
+            return requestToken();
+        }
+        catch (RuntimeException e) {
+            tokenFailures.update(1);
+            throw e;
+        }
+    }
+
+    private AccessToken requestToken()
     {
         StringBuilder body = new StringBuilder("grant_type=client_credentials");
         scope.ifPresent(value -> body.append("&scope=").append(encode(value, UTF_8)));

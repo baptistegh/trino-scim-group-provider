@@ -13,18 +13,38 @@
  */
 package io.github.baptistegh.trino.scim;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.inject.Injector;
+import com.google.inject.Key;
+import com.google.inject.TypeLiteral;
 import io.airlift.bootstrap.Bootstrap;
 import io.trino.spi.security.GroupProvider;
 import io.trino.spi.security.GroupProviderFactory;
 
-import java.util.Map;
+import javax.management.MBeanServer;
 
+import java.util.Map;
+import java.util.Set;
+
+import static java.lang.management.ManagementFactory.getPlatformMBeanServer;
 import static java.util.Objects.requireNonNull;
 
 public class ScimGroupProviderFactory
         implements GroupProviderFactory
 {
+    private final MBeanServer mbeanServer;
+
+    public ScimGroupProviderFactory()
+    {
+        this(getPlatformMBeanServer());
+    }
+
+    @VisibleForTesting
+    ScimGroupProviderFactory(MBeanServer mbeanServer)
+    {
+        this.mbeanServer = requireNonNull(mbeanServer, "mbeanServer is null");
+    }
+
     @Override
     public String getName()
     {
@@ -42,6 +62,8 @@ public class ScimGroupProviderFactory
                 .doNotInitializeLogging()
                 .setRequiredConfigurationProperties(config)
                 .initialize();
+
+        ScimMBeans.export(mbeanServer, injector.getInstance(Key.get(new TypeLiteral<Set<Object>>() {}, ForScim.class)));
 
         return injector.getInstance(GroupProvider.class);
     }

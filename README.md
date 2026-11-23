@@ -101,6 +101,37 @@ Group names can be converted to lower or upper case with Trino's `group-provider
 
 `src/test/resources/keycloak/trino-realm.json` is a complete example.
 
+## Metrics
+
+The plugin exports metrics to JMX on each Trino node. Read them with the
+[JMX connector](https://trino.io/docs/current/connector/jmx.html), which lower-cases MBean and attribute names,
+or with a JMX exporter for Prometheus:
+
+```sql
+SELECT node, "requests.totalcount", "errorresponses.oneminute.rate", "requesttime.alltime.p99"
+FROM jmx.current."io.github.baptistegh.trino.scim:name=scimclient";
+```
+
+| MBean | Attribute | Description |
+|---|---|---|
+| `io.github.baptistegh.trino.scim:name=ScimGroupProvider` | `CacheStats.*` | Cache size, hit rate, miss rate, loads and requests |
+| | `LookupFailures.*` | Group lookups that failed, and so failed the query that needed them |
+| | `UsersNotFound.*` | Lookups of users that do not exist in the SCIM service. A high rate can mean that `scim.user-filter-attribute` does not match the Trino user names |
+| `io.github.baptistegh.trino.scim:name=ScimClient` | `Requests.*` | HTTP requests sent to the SCIM service, including retries |
+| | `RequestTime.*` | Duration of those requests, in milliseconds |
+| | `ConnectionFailures.*` | Requests that received no response: connection refused, timeout, TLS error, ... |
+| | `ErrorResponses.*` | Responses with a status other than 200, after the retry on 401 |
+| | `InvalidResponses.*` | 200 responses whose body could not be parsed |
+| | `CredentialRetries.*` | 401 responses that made the plugin discard its token and retry |
+| `io.github.baptistegh.trino.scim.auth:name=ClientCredentialsAuthenticator` | `TokenRequests.*` | Requests sent to the token endpoint |
+| | `TokenRequestTime.*` | Duration of those requests, in milliseconds |
+| | `TokenFailures.*` | Token requests that did not return a usable token |
+
+Counters (`*.TotalCount`, and rates over one, five and fifteen minutes) and timings (`*.AllTime.P99`, ...) follow
+Airlift's [`CounterStat`](https://github.com/airlift/airlift/blob/master/stats/src/main/java/io/airlift/stats/CounterStat.java)
+and [`TimeStat`](https://github.com/airlift/airlift/blob/master/stats/src/main/java/io/airlift/stats/TimeStat.java).
+The `ClientCredentialsAuthenticator` MBean only exists with `scim.authentication.type=OAUTH2_CLIENT_CREDENTIALS`.
+
 ## Local environment
 
 `dev/` starts Keycloak and Trino. You log in to Trino through Keycloak (OIDC), and Trino resolves your groups
@@ -163,7 +194,8 @@ The Maven Wrapper (`./mvnw`) downloads the Maven version the project is built wi
 
 The integration tests start Keycloak and Trino with Testcontainers. `TrinoCompatibilityIT` installs the
 packaged plugin into the `trinodb/trino:${trino.test.version}` image and checks `current_groups()`,
-group-based access rules, `SET SESSION AUTHORIZATION` and `SECURITY DEFINER` views.
+group-based access rules, `SET SESSION AUTHORIZATION`, `SECURITY DEFINER` views and the metrics in the JMX
+connector.
 
 To support an older Trino version, lower `dep.trino.version` and `project.build.targetJdk` (the Java version
 that Trino version runs on) in `pom.xml`, and add the version to the matrix in `.github/workflows/ci.yml`.

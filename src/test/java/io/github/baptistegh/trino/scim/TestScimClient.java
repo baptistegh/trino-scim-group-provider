@@ -23,6 +23,8 @@ import io.github.baptistegh.trino.scim.model.ScimGroupMembership;
 import io.github.baptistegh.trino.scim.model.ScimUser;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
@@ -33,6 +35,7 @@ import java.util.function.Function;
 import static io.airlift.http.client.testing.TestingResponse.mockResponse;
 import static io.github.baptistegh.trino.scim.ScimClient.equalityFilter;
 import static io.github.baptistegh.trino.scim.TestingRequests.header;
+import static io.github.baptistegh.trino.scim.TestingStats.recordedCount;
 import static java.net.URLDecoder.decode;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -183,6 +186,34 @@ final class TestScimClient
         assertThatThrownBy(() -> client.findUser("alice"))
                 .isInstanceOf(ScimException.class)
                 .hasMessageContaining("Invalid response");
+    }
+
+    @Test
+    void testMetrics()
+    {
+        AtomicInteger calls = new AtomicInteger();
+        ScimClient client = client(_ -> switch (calls.incrementAndGet()) {
+            case 1 -> scimResponse("{\"totalResults\": 0}");
+            // Retried once with a new token, then succeeds
+            case 2 -> mockResponse(HttpStatus.UNAUTHORIZED, SCIM_JSON, "{}");
+            case 3 -> scimResponse("{\"totalResults\": 0}");
+            case 4 -> mockResponse(HttpStatus.SERVICE_UNAVAILABLE, SCIM_JSON, "{}");
+            case 5 -> scimResponse("<html>login page</html>");
+            default -> throw new UncheckedIOException(new IOException("Connection refused"));
+        });
+
+        assertThat(client.findUser("alice")).isEmpty();
+        assertThat(client.findUser("alice")).isEmpty();
+        assertThatThrownBy(() -> client.findUser("alice")).hasMessageContaining("HTTP 503");
+        assertThatThrownBy(() -> client.findUser("alice")).hasMessageContaining("Invalid response");
+        assertThatThrownBy(() -> client.findUser("alice")).hasMessageContaining("Connection refused");
+
+        assertThat(client.getRequests().getTotalCount()).isEqualTo(6);
+        assertThat(recordedCount(client.getRequestTime())).isEqualTo(6);
+        assertThat(client.getCredentialRetries().getTotalCount()).isEqualTo(1);
+        assertThat(client.getErrorResponses().getTotalCount()).isEqualTo(1);
+        assertThat(client.getInvalidResponses().getTotalCount()).isEqualTo(1);
+        assertThat(client.getConnectionFailures().getTotalCount()).isEqualTo(1);
     }
 
     @Test

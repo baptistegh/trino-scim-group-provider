@@ -160,6 +160,17 @@ final class TrinoCompatibilityIT
         assertThat(queryLong("bob", "SELECT employees FROM memory.shared.salary_count")).isEqualTo(2);
     }
 
+    @Test
+    void testExportsMetricsToJmx()
+            throws SQLException
+    {
+        currentGroups("bob");
+        // The JMX connector lower-cases MBean and attribute names
+        assertThat(queryLong("alice", "SELECT \"requests.totalcount\" FROM jmx.current.\"io.github.baptistegh.trino.scim:name=scimclient\"")).isPositive();
+        assertThat(queryLong("alice", "SELECT \"cachestats.requestcount\" FROM jmx.current.\"io.github.baptistegh.trino.scim:name=scimgroupprovider\"")).isPositive();
+        assertThat(queryLong("alice", "SELECT \"tokenrequests.totalcount\" FROM jmx.current.\"io.github.baptistegh.trino.scim.auth:name=clientcredentialsauthenticator\"")).isPositive();
+    }
+
     private List<String> currentGroups(String user)
             throws SQLException
     {
