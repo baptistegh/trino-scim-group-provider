@@ -13,7 +13,13 @@
  */
 package io.github.baptistegh.trino.scim;
 
+import com.google.common.collect.ImmutableListMultimap;
+import com.google.common.collect.ListMultimap;
+import io.airlift.http.client.HeaderName;
+import io.airlift.http.client.HttpStatus;
 import io.airlift.http.client.Request;
+import io.airlift.http.client.Response;
+import io.airlift.http.client.testing.TestingResponse;
 
 public final class TestingRequests
 {
@@ -27,5 +33,23 @@ public final class TestingRequests
     public static String header(Request request, String name)
     {
         return request.getHeader(name);
+    }
+
+    /**
+     * A response with an empty body and one header. The header type of the {@link TestingResponse}
+     * constructor changed in newer Airlift versions, so the headers are set by overriding
+     * {@link Response#getHeaders()}, whose signature is the same in every version.
+     */
+    public static Response responseWithHeader(HttpStatus status, String name, String value)
+    {
+        ListMultimap<HeaderName, String> headers = ImmutableListMultimap.of(HeaderName.of(name), value);
+        return new TestingResponse(status, ImmutableListMultimap.of(), new byte[0])
+        {
+            @Override
+            public ListMultimap<HeaderName, String> getHeaders()
+            {
+                return headers;
+            }
+        };
     }
 }

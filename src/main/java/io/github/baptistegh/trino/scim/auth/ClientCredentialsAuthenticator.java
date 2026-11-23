@@ -24,6 +24,7 @@ import io.airlift.stats.CounterStat;
 import io.airlift.stats.TimeStat;
 import io.github.baptistegh.trino.scim.ForScim;
 import io.github.baptistegh.trino.scim.HttpExchange;
+import io.github.baptistegh.trino.scim.HttpRetrier;
 import io.github.baptistegh.trino.scim.ScimException;
 import io.github.baptistegh.trino.scim.model.TokenResponse;
 import org.weakref.jmx.Managed;
@@ -65,23 +66,26 @@ public class ClientCredentialsAuthenticator
     private final String clientAuthorizationHeader;
     private final Optional<String> scope;
     private final Ticker ticker;
+    private final HttpRetrier retrier;
 
     private final CounterStat tokenRequests = new CounterStat();
     private final TimeStat tokenRequestTime = new TimeStat(MILLISECONDS);
     private final CounterStat tokenFailures = new CounterStat();
+    private final CounterStat tokenRetries = new CounterStat();
 
     @GuardedBy("this")
     private AccessToken token;
 
     @Inject
-    public ClientCredentialsAuthenticator(@ForScim HttpClient httpClient, ClientCredentialsConfig config)
+    public ClientCredentialsAuthenticator(@ForScim HttpClient httpClient, HttpRetrier retrier, ClientCredentialsConfig config)
     {
-        this(httpClient, config, Ticker.systemTicker());
+        this(httpClient, retrier, config, Ticker.systemTicker());
     }
 
     @VisibleForTesting
-    ClientCredentialsAuthenticator(HttpClient httpClient, ClientCredentialsConfig config, Ticker ticker)
+    ClientCredentialsAuthenticator(HttpClient httpClient, HttpRetrier retrier, ClientCredentialsConfig config, Ticker ticker)
     {
+        this.retrier = requireNonNull(retrier, "retrier is null");
         this.httpClient = requireNonNull(httpClient, "httpClient is null");
         this.tokenUrl = requireNonNull(config.getTokenUrl(), "tokenUrl is null");
         // client_secret_basic: both parts are form-encoded before being joined (RFC 6749, section 2.3.1)
@@ -107,7 +111,7 @@ public class ClientCredentialsAuthenticator
     }
 
     /**
-     * Token requests sent to the token endpoint.
+     * Tokens requested from the token endpoint. Each can take several HTTP requests when retried.
      */
     @Managed
     @Nested
@@ -131,6 +135,16 @@ public class ClientCredentialsAuthenticator
     public CounterStat getTokenFailures()
     {
         return tokenFailures;
+    }
+
+    /**
+     * Token requests retried after no response, HTTP 429 or HTTP 502, 503 or 504.
+     */
+    @Managed
+    @Nested
+    public CounterStat getTokenRetries()
+    {
+        return tokenRetries;
     }
 
     private AccessToken fetchToken()
@@ -161,7 +175,7 @@ public class ClientCredentialsAuthenticator
         long requestedAt = ticker.read();
         HttpExchange.Result response;
         try {
-            response = HttpExchange.execute(httpClient, request);
+            response = retrier.execute("token request to " + tokenUrl, () -> HttpExchange.execute(httpClient, request), () -> tokenRetries.update(1));
         }
         catch (ScimException e) {
             throw new ScimException(format("Failed to obtain an access token from %s", tokenUrl), e);

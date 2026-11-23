@@ -40,6 +40,7 @@ final class TestScimGroupProviderPlugin
                 "scim.oauth2.token-url", "https://idp.example.com/token",
                 "scim.oauth2.client-id", "trino",
                 "scim.oauth2.client-secret", "secret",
+                "scim.retry.max-attempts", "5",
                 "scim.http-client.request-timeout", "5s")))
                 .isInstanceOf(ScimGroupProvider.class);
     }
