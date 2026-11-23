@@ -9,6 +9,11 @@
       "enabled": false
     },
     {
+      "description": "Patch, minor and digest updates merge on their own once the required checks pass",
+      "matchUpdateTypes": ["patch", "minor", "digest"],
+      "automerge": true
+    },
+    {
       "description": "docker-java must match the version Testcontainers is built with",
       "matchPackageNames": ["org.testcontainers:**", "com.github.docker-java:**"],
       "groupName": "Testcontainers"

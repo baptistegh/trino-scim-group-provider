@@ -142,6 +142,25 @@ jobs:
           name: test-reports-trino-${{ matrix.trino }}
           path: target/failsafe-reports/
 
+  # Single status to mark as required in branch protection, since the matrix job names change with
+  # .github/compatibility.json. Fails unless every integration test job succeeded: a job skipped
+  # because a job it needs failed (for example Checks) counts as a failure.
+  integration-tests:
+    name: Integration tests
+    needs: [build, compatibility]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check integration test results
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          jq --raw-output 'to_entries[] | "\(.key): \(.value.result)"' <<< "$NEEDS"
+          if ! jq --exit-status 'all(.[]; .result == "success")' <<< "$NEEDS" > /dev/null; then
+            echo "::error::Some integration tests did not succeed"
+            exit 1
+          fi
+
   # Compiles against the newest Trino release, to find source incompatibilities before
   # the minimum supported version has to be raised. Not run for releases: the released
   # artifact is built against the oldest supported version.
