@@ -18,9 +18,13 @@ import com.google.inject.Inject;
 import io.airlift.http.client.HttpClient;
 import io.airlift.http.client.Request;
 import io.airlift.json.JsonCodec;
+import io.airlift.stats.CounterStat;
+import io.airlift.stats.TimeStat;
 import io.github.baptistegh.trino.scim.auth.ScimAuthenticator;
 import io.github.baptistegh.trino.scim.model.ScimListResponse;
 import io.github.baptistegh.trino.scim.model.ScimUser;
+import org.weakref.jmx.Managed;
+import org.weakref.jmx.Nested;
 
 import java.net.URI;
 import java.util.Optional;
@@ -33,6 +37,7 @@ import static io.airlift.json.JsonCodec.jsonCodec;
 import static io.github.baptistegh.trino.scim.HttpExchange.setHeader;
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
 
 /**
  * Minimal SCIM 2.0 client (RFC 7644) that looks up a user and its group memberships.
@@ -48,6 +53,13 @@ public class ScimClient
     private final ScimAuthenticator authenticator;
     private final URI baseUrl;
     private final String userFilterAttribute;
+
+    private final CounterStat requests = new CounterStat();
+    private final TimeStat requestTime = new TimeStat(MILLISECONDS);
+    private final CounterStat connectionFailures = new CounterStat();
+    private final CounterStat errorResponses = new CounterStat();
+    private final CounterStat invalidResponses = new CounterStat();
+    private final CounterStat credentialRetries = new CounterStat();
 
     @Inject
     public ScimClient(@ForScim HttpClient httpClient, ScimAuthenticator authenticator, ScimGroupProviderConfig config)
@@ -122,8 +134,12 @@ public class ScimClient
         HttpExchange.Result response = execute(uri);
         if (response.statusCode() == 401) {
             // The token may have been revoked or expired early; retry once with a fresh one
+            credentialRetries.update(1);
             authenticator.invalidate();
             response = execute(uri);
+        }
+        if (response.statusCode() != 200) {
+            errorResponses.update(1);
         }
         if (response.statusCode() == 401) {
             throw new ScimException(format("SCIM service rejected the credentials for %s: HTTP 401%s", uri, details(response.body())));
@@ -135,6 +151,7 @@ public class ScimClient
             return codec.fromJson(response.body());
         }
         catch (IllegalArgumentException e) {
+            invalidResponses.update(1);
             throw new ScimException(format("Invalid response to SCIM request %s", uri), e);
         }
     }
@@ -145,7 +162,71 @@ public class ScimClient
         setHeader(builder, AUTHORIZATION, authenticator.getAuthorizationHeader());
         setHeader(builder, ACCEPT, SCIM_MEDIA_TYPE);
         Request request = builder.build();
-        return HttpExchange.execute(httpClient, request);
+        requests.update(1);
+        try (TimeStat.BlockTimer _ = requestTime.time()) {
+            return HttpExchange.execute(httpClient, request);
+        }
+        catch (ScimException e) {
+            connectionFailures.update(1);
+            throw e;
+        }
+    }
+
+    /**
+     * HTTP requests sent to the SCIM service, including retries.
+     */
+    @Managed
+    @Nested
+    public CounterStat getRequests()
+    {
+        return requests;
+    }
+
+    @Managed
+    @Nested
+    public TimeStat getRequestTime()
+    {
+        return requestTime;
+    }
+
+    /**
+     * Requests that received no response: connection refused, timeout, TLS error, ...
+     */
+    @Managed
+    @Nested
+    public CounterStat getConnectionFailures()
+    {
+        return connectionFailures;
+    }
+
+    /**
+     * Responses with a status other than 200, after the retry on 401.
+     */
+    @Managed
+    @Nested
+    public CounterStat getErrorResponses()
+    {
+        return errorResponses;
+    }
+
+    /**
+     * 200 responses whose body could not be parsed.
+     */
+    @Managed
+    @Nested
+    public CounterStat getInvalidResponses()
+    {
+        return invalidResponses;
+    }
+
+    /**
+     * 401 responses that made the client discard its token and retry.
+     */
+    @Managed
+    @Nested
+    public CounterStat getCredentialRetries()
+    {
+        return credentialRetries;
     }
 
     private static String details(String body)

@@ -124,7 +124,29 @@ final class TestScimGroupProvider
         assertThat(provider.getGroups("alice")).containsExactlyInAnyOrder("data-engineers", "engineering");
     }
 
-    private static GroupProvider provider(ScimGroupProviderConfig config, Function<Request, Response> handler)
+    @Test
+    void testMetrics()
+    {
+        AtomicBoolean failing = new AtomicBoolean(false);
+        Function<Request, Response> service = fakeService(new AtomicInteger());
+        ScimGroupProvider provider = provider(new ScimGroupProviderConfig(), request -> failing.get()
+                ? mockResponse(HttpStatus.SERVICE_UNAVAILABLE, SCIM_JSON, "{}")
+                : service.apply(request));
+
+        provider.getGroups("alice");
+        provider.getGroups("alice");
+        provider.getGroups("unknown");
+        failing.set(true);
+        assertThatThrownBy(() -> provider.getGroups("bob")).isInstanceOf(TrinoException.class);
+
+        assertThat(provider.getCacheStats().getRequestCount()).isEqualTo(4);
+        assertThat(provider.getCacheStats().getHitRate()).isEqualTo(0.25);
+        assertThat(provider.getCacheStats().size()).isEqualTo(2);
+        assertThat(provider.getUsersNotFound().getTotalCount()).isEqualTo(1);
+        assertThat(provider.getLookupFailures().getTotalCount()).isEqualTo(1);
+    }
+
+    private static ScimGroupProvider provider(ScimGroupProviderConfig config, Function<Request, Response> handler)
     {
         return new ScimGroupProvider(client(handler), config.setBaseUrl(BASE_URL));
     }

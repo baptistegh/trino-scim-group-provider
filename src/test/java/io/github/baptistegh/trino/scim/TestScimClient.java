@@ -23,6 +23,8 @@ import io.github.baptistegh.trino.scim.model.ScimGroupMembership;
 import io.github.baptistegh.trino.scim.model.ScimUser;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
@@ -183,6 +185,34 @@ final class TestScimClient
         assertThatThrownBy(() -> client.findUser("alice"))
                 .isInstanceOf(ScimException.class)
                 .hasMessageContaining("Invalid response");
+    }
+
+    @Test
+    void testMetrics()
+    {
+        AtomicInteger calls = new AtomicInteger();
+        ScimClient client = client(_ -> switch (calls.incrementAndGet()) {
+            case 1 -> scimResponse("{\"totalResults\": 0}");
+            // Retried once with a new token, then succeeds
+            case 2 -> mockResponse(HttpStatus.UNAUTHORIZED, SCIM_JSON, "{}");
+            case 3 -> scimResponse("{\"totalResults\": 0}");
+            case 4 -> mockResponse(HttpStatus.SERVICE_UNAVAILABLE, SCIM_JSON, "{}");
+            case 5 -> scimResponse("<html>login page</html>");
+            default -> throw new UncheckedIOException(new IOException("Connection refused"));
+        });
+
+        assertThat(client.findUser("alice")).isEmpty();
+        assertThat(client.findUser("alice")).isEmpty();
+        assertThatThrownBy(() -> client.findUser("alice")).hasMessageContaining("HTTP 503");
+        assertThatThrownBy(() -> client.findUser("alice")).hasMessageContaining("Invalid response");
+        assertThatThrownBy(() -> client.findUser("alice")).hasMessageContaining("Connection refused");
+
+        assertThat(client.getRequests().getTotalCount()).isEqualTo(6);
+        assertThat(client.getRequestTime().getAllTime().getCount()).isEqualTo(6);
+        assertThat(client.getCredentialRetries().getTotalCount()).isEqualTo(1);
+        assertThat(client.getErrorResponses().getTotalCount()).isEqualTo(1);
+        assertThat(client.getInvalidResponses().getTotalCount()).isEqualTo(1);
+        assertThat(client.getConnectionFailures().getTotalCount()).isEqualTo(1);
     }
 
     @Test

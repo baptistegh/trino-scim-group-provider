@@ -110,6 +110,25 @@ final class TestClientCredentialsAuthenticator
     }
 
     @Test
+    void testMetrics()
+    {
+        AtomicInteger calls = new AtomicInteger();
+        TestingHttpClient httpClient = new TestingHttpClient(_ -> calls.incrementAndGet() == 1
+                ? mockResponse(HttpStatus.SERVICE_UNAVAILABLE, JSON_UTF_8, "{}")
+                : tokenResponse("token", 300));
+        ClientCredentialsAuthenticator authenticator = new ClientCredentialsAuthenticator(httpClient, config(), new FakeTicker());
+
+        assertThatThrownBy(authenticator::getAuthorizationHeader).isInstanceOf(ScimException.class);
+        assertThat(authenticator.getAuthorizationHeader()).isEqualTo("Bearer token");
+        // Served from the cached token
+        assertThat(authenticator.getAuthorizationHeader()).isEqualTo("Bearer token");
+
+        assertThat(authenticator.getTokenRequests().getTotalCount()).isEqualTo(2);
+        assertThat(authenticator.getTokenFailures().getTotalCount()).isEqualTo(1);
+        assertThat(authenticator.getTokenRequestTime().getAllTime().getCount()).isEqualTo(2);
+    }
+
+    @Test
     void testRejectsNonBearerToken()
     {
         TestingHttpClient httpClient = new TestingHttpClient(_ -> mockResponse(HttpStatus.OK, JSON_UTF_8, "{\"access_token\":\"x\",\"token_type\":\"mac\"}"));

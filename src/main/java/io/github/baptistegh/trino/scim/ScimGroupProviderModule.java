@@ -15,6 +15,7 @@ package io.github.baptistegh.trino.scim;
 
 import com.google.inject.Binder;
 import com.google.inject.Scopes;
+import com.google.inject.multibindings.Multibinder;
 import io.airlift.configuration.AbstractConfigurationAwareModule;
 import io.github.baptistegh.trino.scim.auth.BearerTokenAuthenticator;
 import io.github.baptistegh.trino.scim.auth.BearerTokenConfig;
@@ -23,6 +24,7 @@ import io.github.baptistegh.trino.scim.auth.ClientCredentialsConfig;
 import io.github.baptistegh.trino.scim.auth.ScimAuthenticator;
 import io.trino.spi.security.GroupProvider;
 
+import static com.google.inject.multibindings.Multibinder.newSetBinder;
 import static io.airlift.configuration.ConfigBinder.configBinder;
 import static io.airlift.http.client.HttpClientBinder.httpClientBinder;
 
@@ -36,10 +38,15 @@ public class ScimGroupProviderModule
         // Exposes scim.http-client.* properties (timeouts, TLS trust store, ...)
         httpClientBinder(binder).bindHttpClient("scim", ForScim.class);
 
+        // Objects whose @Managed attributes ScimGroupProviderFactory exports to JMX
+        Multibinder<Object> managedObjects = newSetBinder(binder, Object.class, ForScim.class);
+
         switch (buildConfigObject(ScimGroupProviderConfig.class).getAuthenticationType()) {
             case OAUTH2_CLIENT_CREDENTIALS -> {
                 configBinder(binder).bindConfig(ClientCredentialsConfig.class);
-                binder.bind(ScimAuthenticator.class).to(ClientCredentialsAuthenticator.class).in(Scopes.SINGLETON);
+                binder.bind(ClientCredentialsAuthenticator.class).in(Scopes.SINGLETON);
+                binder.bind(ScimAuthenticator.class).to(ClientCredentialsAuthenticator.class);
+                managedObjects.addBinding().to(ClientCredentialsAuthenticator.class);
             }
             case BEARER_TOKEN -> {
                 configBinder(binder).bindConfig(BearerTokenConfig.class);
@@ -48,6 +55,9 @@ public class ScimGroupProviderModule
         }
 
         binder.bind(ScimClient.class).in(Scopes.SINGLETON);
-        binder.bind(GroupProvider.class).to(ScimGroupProvider.class).in(Scopes.SINGLETON);
+        binder.bind(ScimGroupProvider.class).in(Scopes.SINGLETON);
+        binder.bind(GroupProvider.class).to(ScimGroupProvider.class);
+        managedObjects.addBinding().to(ScimClient.class);
+        managedObjects.addBinding().to(ScimGroupProvider.class);
     }
 }

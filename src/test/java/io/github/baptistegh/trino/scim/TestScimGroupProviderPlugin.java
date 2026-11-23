@@ -17,7 +17,13 @@ import com.google.common.collect.ImmutableMap;
 import io.trino.spi.security.GroupProviderFactory;
 import org.junit.jupiter.api.Test;
 
+import javax.management.MBeanServer;
+import javax.management.ObjectName;
+
+import java.util.Map;
+
 import static com.google.common.collect.Iterables.getOnlyElement;
+import static javax.management.MBeanServerFactory.newMBeanServer;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -46,6 +52,44 @@ final class TestScimGroupProviderPlugin
                 "scim.authentication.type", "BEARER_TOKEN",
                 "scim.bearer-token", "token")))
                 .isInstanceOf(ScimGroupProvider.class);
+    }
+
+    @Test
+    void testExportsMetrics()
+            throws Exception
+    {
+        MBeanServer mbeanServer = newMBeanServer();
+        Map<String, String> config = ImmutableMap.of(
+                "scim.base-url", "https://idp.example.com/scim/v2",
+                "scim.oauth2.token-url", "https://idp.example.com/token",
+                "scim.oauth2.client-id", "trino",
+                "scim.oauth2.client-secret", "secret");
+        ScimGroupProviderFactory factory = new ScimGroupProviderFactory(mbeanServer);
+        factory.create(config);
+
+        assertThat(mbeanServer.getAttribute(new ObjectName("io.github.baptistegh.trino.scim:name=ScimGroupProvider"), "CacheStats.RequestCount")).isEqualTo(0L);
+        assertThat(mbeanServer.getAttribute(new ObjectName("io.github.baptistegh.trino.scim:name=ScimClient"), "Requests.TotalCount")).isEqualTo(0L);
+        assertThat(mbeanServer.getAttribute(new ObjectName("io.github.baptistegh.trino.scim.auth:name=ClientCredentialsAuthenticator"), "TokenRequests.TotalCount")).isEqualTo(0L);
+
+        // A second group provider in the same JVM replaces the MBeans of the first
+        factory.create(config);
+        assertThat(mbeanServer.queryNames(new ObjectName("io.github.baptistegh.trino.scim*:*"), null)).hasSize(3);
+    }
+
+    @Test
+    void testBearerTokenExportsNoAuthenticatorMetrics()
+            throws Exception
+    {
+        MBeanServer mbeanServer = newMBeanServer();
+        new ScimGroupProviderFactory(mbeanServer).create(ImmutableMap.of(
+                "scim.base-url", "https://idp.example.com/scim/v2",
+                "scim.authentication.type", "BEARER_TOKEN",
+                "scim.bearer-token", "token"));
+
+        assertThat(mbeanServer.queryNames(new ObjectName("io.github.baptistegh.trino.scim*:*"), null))
+                .containsExactlyInAnyOrder(
+                        new ObjectName("io.github.baptistegh.trino.scim:name=ScimGroupProvider"),
+                        new ObjectName("io.github.baptistegh.trino.scim:name=ScimClient"));
     }
 
     @Test

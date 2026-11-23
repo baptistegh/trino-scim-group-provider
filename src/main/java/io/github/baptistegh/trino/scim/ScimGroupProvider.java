@@ -19,11 +19,15 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.util.concurrent.UncheckedExecutionException;
 import com.google.inject.Inject;
 import io.airlift.log.Logger;
+import io.airlift.stats.CounterStat;
 import io.github.baptistegh.trino.scim.model.ScimGroupMembership;
 import io.github.baptistegh.trino.scim.model.ScimUser;
+import io.trino.cache.CacheStatsMBean;
 import io.trino.cache.EvictableCacheBuilder;
 import io.trino.spi.TrinoException;
 import io.trino.spi.security.GroupProvider;
+import org.weakref.jmx.Managed;
+import org.weakref.jmx.Nested;
 
 import java.util.Optional;
 import java.util.Set;
@@ -51,6 +55,9 @@ public class ScimGroupProvider
     private final ScimClient client;
     private final boolean includeIndirectGroups;
     private final LoadingCache<String, Set<String>> cache;
+    private final CacheStatsMBean cacheStats;
+    private final CounterStat lookupFailures = new CounterStat();
+    private final CounterStat usersNotFound = new CounterStat();
 
     @Inject
     public ScimGroupProvider(ScimClient client, ScimGroupProviderConfig config)
@@ -62,7 +69,9 @@ public class ScimGroupProvider
                 .expireAfterWrite(config.getCacheTtl().toMillis(), MILLISECONDS)
                 .maximumSize(config.getCacheMaximumSize())
                 .shareNothingWhenDisabled()
+                .recordStats()
                 .build(CacheLoader.from(this::loadGroups));
+        this.cacheStats = new CacheStatsMBean(cache);
     }
 
     @Override
@@ -73,8 +82,37 @@ public class ScimGroupProvider
             return cache.getUnchecked(user);
         }
         catch (UncheckedExecutionException e) {
+            lookupFailures.update(1);
             throw new TrinoException(SCIM_GROUP_LOOKUP_FAILED, format("Failed to resolve groups of user '%s' from SCIM: %s", user, e.getCause().getMessage()), e.getCause());
         }
+    }
+
+    @Managed
+    @Nested
+    public CacheStatsMBean getCacheStats()
+    {
+        return cacheStats;
+    }
+
+    /**
+     * Group lookups that failed, and so failed the query that needed them.
+     */
+    @Managed
+    @Nested
+    public CounterStat getLookupFailures()
+    {
+        return lookupFailures;
+    }
+
+    /**
+     * Lookups of users that do not exist in the SCIM service, who get no groups. A high rate can mean that
+     * {@code scim.user-filter-attribute} does not match the Trino user names.
+     */
+    @Managed
+    @Nested
+    public CounterStat getUsersNotFound()
+    {
+        return usersNotFound;
     }
 
     private Set<String> loadGroups(String user)
@@ -82,6 +120,7 @@ public class ScimGroupProvider
         Optional<ScimUser> scimUser = client.findUser(user);
         if (scimUser.isEmpty()) {
             log.debug("User '%s' not found in SCIM service", user);
+            usersNotFound.update(1);
             return ImmutableSet.of();
         }
         if (scimUser.get().groups() == null) {
